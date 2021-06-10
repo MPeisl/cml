@@ -33,8 +33,11 @@ SBINDIR := /usr/sbin
 install:
 	mkdir -p ${DESTDIR}${SBINDIR}
 	cp cmld ${DESTDIR}${SBINDIR}/
+	mkdir -p ${DESTDIR}/etc/init.d
 	cp init.d/cmld ${DESTDIR}/etc/init.d/
 	mkdir -p ${DESTDIR}/var/lib/cml
 	mkdir -p ${DESTDIR}/etc/cml
 	echo "uuid: \"$(shell cat /proc/sys/kernel/random/uuid)\"" > ${DESTDIR}/etc/cml/device.conf
 	echo "hostedmode: true" >> ${DESTDIR}/etc/cml/device.conf
+	mkdir -p ${DESTDIR}/usr/share/doc/cml
+	cp guestos.proto ${DESTDIR}/usr/share/doc/cml/
