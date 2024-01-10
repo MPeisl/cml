@@ -1,0 +1,206 @@
+.TH cml-control "1" "2024-01-10" UNRELEASED
+.SH NAME
+cml-control - allows communication with cmld
+.SH SYNOPSIS
+.B cml-control
+.RB [\| -s
+.IR "socket file" \|]
+.I command
+.RI [\| "command args" \|]
+.SH DESCRIPTION
+.br
+.B cml-control
+allows administration and configuration of the GyroidOS platform, such as creating
+and starting containers, running a given command inside a container, etc. The
+available actions are listed below.
+.br
+\&
+.br
+Usually, container specific commands use the container-uuid as parameter to identify
+the corresponding container. However, for convenience also the container name can
+be used. If you have several containers with the same name, always the first
+matching one is used. In that case, you have to specify the UUID to address a specific container.
+.br
+\&
+.br
+Futher information can be found on
+.UR https://gyroidos.github.io/
+.UE .
+.SH COMMANDS
+.TP
+.B list
+.br
+Lists all available containers and their state.
+.br
+.TP
+.B list_guestos
+.br
+Lists all installed guestos configs.
+.br
+.TP
+.B reload
+.br
+This command reloads all container configs of all containers in state 'STOPPED' into the running 
+.BR cmld .
+.br
+.TP
+.B wipe_device
+.br
+Wipes all containers on the device.
+.br
+.TP
+.B reboot
+.br
+Reboots the whole device, shutting down any containers which are running.
+.br
+.TP
+.B set_provisioned
+.br
+Sets the device to provisioned state which limits certain commands.
+.br
+.TP
+.B get_provisioned
+.br
+Gets the device provisioned state.
+.br
+.TP
+.B device_stats
+.br
+Gets the device statistics about memory and disk usage.
+.br
+.TP
+.B create  
+.I container.conf
+.RI [\| container.sig
+.IR container.cert \|]
+.br
+Creates a container from the given config file,
+and optionally signature and certificate files
+.br
+.TP
+.BI remove\  container-uuid
+.br
+Removes the specified container (completely).
+.br
+.TP
+.BI change_pin\  container-uuid
+Change token pin which is used for container key wrapping.
+Prompts for password entry.
+.br
+.TP
+.B start
+.I container-uuid
+.RB [\| --key=\fIkey \|]
+.RB [\| --setup \|]
+.br
+Starts the container with the given key (default: all '0') .
+.br
+.TP
+.B stop
+.I container-uuid
+.RB [\| --key=\fIkey \|]
+.br
+Stops the specified container.
+.br
+.TP
+.BI config\  container-uuid
+Prints the config of the specified container.
+.br
+.TP
+.B update_config \fIcontainer-uuid \fIcontainer.conf \fR[\fIcontainer.sig\  \fIcontainer.cert\fR]
+.br
+Updates a container's config with the given config file,
+and optionally signature and certificate files
+.br
+.TP
+.BI state\  container-uuid
+.br
+Prints the state of the specified container.
+.br
+.TP
+.BI freeze\  container-uuid
+.br
+Freeze the specified container.
+.br
+.TP
+.BI unfreeze\  container-uuid
+.br
+Unfreeze the specified container.
+.br
+.TP
+.BI allow_audio\  container-uuid
+.br
+Grant audio access to the specified container (cgroups).
+.br
+.TP
+.BI deny_audio\  container-uuid
+.br
+Deny audio access to the specified container (cgroups).
+.br
+.TP
+.BI wipe\  container-uuid
+.br
+Wipes the specified container.
+.br
+.TP
+.B push_guestos_config \fIguestos.conf \fIguestos.sig \fIguestos.pem
+.br
+Pushes the specified GuestOS config, signature, and certificate files.
+.br
+.TP
+.BI remove_guestos\  "guestos name"
+.br
+Remove a GuestOS by the specified name.
+It will only remove the OS if no container is using it anymore.
+.br
+.TP
+.BI ca_register\  ca.cert
+.br
+Registers a new certificate in trusted CA store for allowed GuestOS signatures.
+.br
+.TP
+.BI pull_csr\  device.csr
+.br
+Pulls the device csr and stores it in
+.I device.csr\fR.
+.br
+.TP
+.BI push_cert\  device.cert
+.br
+Pushes back the device certificate provided by
+.I device.cert\fR.
+.br
+.TP
+.BI assign_iface\  container-uuid\  --iface\  iface_name\  \fR[\| \fB--persistent \|\fR]
+Assign the specified network interface to the specified container.
+If the
+.B persistent 
+option is set, the container config file will
+be modified accordingly.
+.br
+.TP
+.B unassign_iface\  \fIcontainer-uuid\  \fB--iface\  \fIiface_name\   \fR[\|\fB--persistent\fR\|]
+.br
+Unassign the specified network interface from the specified container.
+If the
+.B persistent
+option is set, the container config file will
+be modified accordingly.
+.br
+.TP
+.BI ifaces\  container-uuid
+.br
+Prints the list of network interfaces assigned to the specified container.
+.br
+.TP
+.BI run\  container-uuid\ \fIcommand\  \fR[\|\fIargs\ \fR\|.\|.\|.\|]
+.br
+Runs the specified command with the given arguments inside the specified container.
+.br
+.TP
+.B retrieve_logs \fR[\|\fIpath_to_logstore_dir\fR\|]
+.br
+Retrieves logs from the directory defined in LOGFILE_DIR and stores them in the given directory or in the current directory if no directory was given.
+.SH "SEE ALSO"
+.BR cmld (1),
+.BR cml-scd (1)
