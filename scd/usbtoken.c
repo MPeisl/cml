@@ -29,6 +29,7 @@
 #include "common/macro.h"
 #include "common/mem.h"
 #include "common/file.h"
+#include "common/list.h"
 #include "common/str.h"
 #include "common/ssl_util.h"
 
@@ -51,6 +52,7 @@
 //#define LOGF_LOG_MIN_PRIO LOGF_PRIO_TRACE
 
 static unsigned short g_ctn = 0;
+static list_t *ctn_available_list = NULL; // already used but closed ctns less than g_ctn
 
 /* following are implementation specific byte arrays used to commuicate with 'sc-hsm' tokens
  * manufactored by CardContact.
@@ -82,6 +84,31 @@ struct usbtoken {
 	unsigned char *latr; // ATR of last reset
 	size_t latr_len;
 };
+
+static unsigned short
+ctn_get_unused(void)
+{
+	unsigned short ctn;
+
+	if (!ctn_available_list) {
+		ctn = g_ctn++;
+	} else {
+		unsigned short *ctn_available = ctn_available_list->data;
+		ctn = *ctn_available;
+		mem_free0(ctn_available);
+		ctn_available_list = list_unlink(ctn_available_list, ctn_available_list);
+	}
+
+	return ctn;
+}
+
+static void
+ctn_set_available(unsigned short ctn)
+{
+	unsigned short *ctn_available = mem_new0(unsigned short, 1);
+	*ctn_available = ctn;
+	ctn_available_list = list_append(ctn_available_list, ctn_available);
+}
 
 /**
  * Derive an authentication code from a parining secret and a user pin/passwd.
@@ -241,7 +268,7 @@ token_filter_by_serial(const unsigned char *readers, const unsigned short lr, co
 
 	char *s = (char *)mem_memcpy(readers, lr);
 	/* readers: |-|-|---15---|---X---|-|-|
-	 *	 fields  1 2     3       4    5 6
+	 *   fields  1 2     3       4    5 6
 	 * 		1: uint8_t libusb_get_bus_number()
 	 * 		2: uint8_t libusb_get_device_address
 	 * 		3: string  "SmartCard-HSM ("
@@ -256,20 +283,32 @@ token_filter_by_serial(const unsigned char *readers, const unsigned short lr, co
 		iport = *po << 8 | *(po + 1);
 		po += 2;
 		idx += 2;
+		TRACE("reader string at offset '%u': '%s'", idx, readers + idx);
 
+		/*
+		 * advance po offset to beginning of field 4
+		 */
 		po += 15;
 
-		size_t s_len = strlen(po) - 1;
+		size_t s_len = strlen(po);
 
-		if ((s_len > 0) && (strncmp(po, serial, s_len) == 0)) {
-			TRACE("USBTOKEN: token_filter_by_serial() found reader with serial: %s at port 0x%04x",
+		/*
+		 * string at po now contains 4 and 5, "<iSerialNumber>)".
+		 * thus, strip ")" for comparison
+		 */
+		if ((s_len > 0) && (strncmp(po, serial, s_len - 1) == 0)) {
+			TRACE("USBTOKEN: token_filter_by_serial() found reader"
+			      " with serial: %s at port 0x%04x",
 			      serial, iport);
 			*port = iport;
 			mem_free0(s);
 			return 0;
 		}
 
-		po += 15 + s_len + 1;
+		/*
+		 * advance pointers to the next reader string
+		 */
+		po += s_len + 1;
 		idx += 15 + s_len + 1;
 	}
 
@@ -386,7 +425,7 @@ usbtoken_new(const char *serial)
 	IF_NULL_RETVAL_ERROR(token, NULL);
 
 	token->locked = true;
-	token->ctn = g_ctn++;
+	token->ctn = ctn_get_unused();
 	token->serial = mem_strdup(serial);
 	IF_NULL_GOTO_ERROR(token->serial, err);
 
@@ -394,6 +433,7 @@ usbtoken_new(const char *serial)
 	mem_free0(brsp);
 	if (rc != 0) {
 		ERROR("Failed to initialize ctapi interface to usb token reader");
+		ctn_set_available(token->ctn);
 		goto err;
 	}
 
@@ -558,7 +598,10 @@ usbtoken_free(usbtoken_t *token)
 	ASSERT(token);
 
 	if (0 != CT_close(token->ctn)) {
-		ERROR("Closing CT interface to token failed.");
+		ERROR("Closing CT interface (ctn=%d) to token failed.", token->ctn);
+	} else {
+		DEBUG("Closing CT interface (ctn=%d) done.", token->ctn);
+		ctn_set_available(token->ctn);
 	}
 
 	mem_free0(token->latr);
@@ -567,7 +610,6 @@ usbtoken_free(usbtoken_t *token)
 	usbtoken_free_secrets(token);
 
 	mem_free0(token);
-	g_ctn--;
 }
 
 /**

@@ -95,6 +95,11 @@
 /* Network prefix */
 #define IPV4_PREFIX 24
 
+/* Port numbers for SSH access to cml in debug build.
+ * CML_SSH_PORT_C0 gets forwarded to CML_SSH_PORT_CML */
+#define CML_SSH_PORT_CML 22
+#define CML_SSH_PORT_C0 2222
+
 /* Network interface structure with interface specific settings */
 typedef struct {
 	char *nw_name;		       //!< Name of the network device
@@ -116,6 +121,7 @@ typedef struct c_net {
 	list_t *pnet_mv_list; //!< contains list of phyiscal NICs to be bridged via a veth or moved into a container. MAC adress filtering may be applied
 	char *ns_path;	      //!< path for binding netns into filesystem
 	int fd_netns;	      //!< fd to keep netns active during reboots
+	list_t *hotplug_registered_mac_list; //!< contains list of macs which are registered at hotplug module
 } c_net_t;
 
 /**
@@ -849,6 +855,10 @@ c_net_new(compartment_t *compartment)
 			} else {
 				INFO("Registed Interface for mac '%s' at hotplug subsys",
 				     if_name_macstr);
+
+				net->hotplug_registered_mac_list =
+					list_append(net->hotplug_registered_mac_list,
+						    mem_memcpy((unsigned char *)&mac, sizeof(mac)));
 			}
 
 			if_name = network_get_ifname_by_addr_new(mac);
@@ -1024,6 +1034,29 @@ c_net_start_post_clone_interface(pid_t pid, c_net_interface_t *ni)
 	return 0;
 }
 
+#ifdef DEBUG_BUILD
+static int
+setup_c0_cml_ssh_port_forwarding(c_net_interface_t *ni)
+{
+	char srcaddr[INET_ADDRSTRLEN];
+	char dstaddr[INET_ADDRSTRLEN];
+
+	IF_NULL_GOTO(inet_ntop(AF_INET, &ni->ipv4_cont_addr, srcaddr, sizeof(srcaddr)), err);
+	IF_NULL_GOTO(inet_ntop(AF_INET, &ni->ipv4_cmld_addr, dstaddr, sizeof(dstaddr)), err);
+
+	IF_TRUE_GOTO(network_setup_port_forwarding(srcaddr, CML_SSH_PORT_C0, dstaddr,
+						   CML_SSH_PORT_CML, true),
+		     err);
+
+	return 0;
+
+err:
+	ERROR_ERRNO("Could not setup port forwarding from %s:%d to %s:%d on interface %s!", srcaddr,
+		    CML_SSH_PORT_C0, dstaddr, CML_SSH_PORT_CML, ni->veth_cmld_name);
+	return -1;
+}
+#endif
+
 /**
  * This function is responsible for moving the container interface to its corresponding namespace.
  * This Function is part of TSF.CML.CompartmentIsolation.
@@ -1129,7 +1162,13 @@ c_net_start_post_clone(void *netp)
 				if (network_setup_masquerading(ni->subnet, true))
 					FATAL_ERRNO("Could not setup masquerading for %s!",
 						    ni->veth_cmld_name);
-				// configuration of interface is done in root netns below
+					// configuration of interface is done in root netns below
+
+#ifdef DEBUG_BUILD
+				/* setup port forwarding for ssh in debug build */
+				if (setup_c0_cml_ssh_port_forwarding(ni))
+					FATAL("Could not setup ssh port forwarding!");
+#endif
 				continue;
 			}
 
@@ -1432,6 +1471,14 @@ c_net_free(void *netp)
 	c_net_t *net = netp;
 	ASSERT(net);
 
+	/* unregister netdevs by mac from hotplug subsystem */
+	for (list_t *l = net->hotplug_registered_mac_list; l; l = l->next) {
+		uint8_t *mac = l->data;
+		hotplug_unregister_netdev(net->container, mac);
+		mem_free0(mac);
+	}
+	list_delete(net->hotplug_registered_mac_list);
+
 	for (list_t *l = net->interface_list; l; l = l->next) {
 		c_net_interface_t *ni = l->data;
 		c_net_free_interface(ni);
@@ -1447,7 +1494,7 @@ c_net_free(void *netp)
 }
 
 /**
- * This funtion provides a list of conatiner_net_cfg_t* objects
+ * This function provides a list of container_net_cfg_t* objects
  * which contain the name of an interface inside the container and the
  * corresponding interface name of the endpoint in the root network namespace.
  */
