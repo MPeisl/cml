@@ -1014,7 +1014,7 @@ static token_operations_t usbtoken_ops = {
  * Initializes a usb token
  */
 void *
-usbtoken_new(const token_t *token, token_operations_t **ops, const char *serial)
+usbtoken_new(token_t *token, token_operations_t **ops, const char *serial)
 {
 	ASSERT(serial);
 
